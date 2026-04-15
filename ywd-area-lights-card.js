@@ -88,6 +88,10 @@ class YWDAreaLightsCard extends HTMLElement {
     return this._hass?.states[entityId]?.state === 'on';
   }
 
+  _isUnavailable(entityId) {
+    return this._hass?.states[entityId]?.state === 'unavailable';
+  }
+
   _getActiveColor(entityId, stateObj, cfg, fallback) {
     if (!stateObj || stateObj.state !== 'on') return fallback;
     if (entityId.startsWith('light.') && cfg.entity_overrides?.[entityId]?.use_light_color) {
@@ -100,12 +104,14 @@ class YWDAreaLightsCard extends HTMLElement {
   }
 
   _toggle(entityId) {
+    if (this._isUnavailable(entityId)) return;
     const domain = entityId.split('.')[0];
     const isOn = this._isOn(entityId);
     this._hass.callService(domain, isOn ? 'turn_off' : 'turn_on', { entity_id: entityId });
   }
 
   _handleSlider(entityId, value) {
+    if (this._isUnavailable(entityId)) return;
     this._hass.callService('light', 'turn_on', {
       entity_id: entityId,
       brightness_pct: value
@@ -156,7 +162,6 @@ class YWDAreaLightsCard extends HTMLElement {
         width: 100%;
       }
 
-      /* The master container for each light */
       .card {
         background: ${tileColor};
         border-radius: ${borderRadius};
@@ -168,12 +173,21 @@ class YWDAreaLightsCard extends HTMLElement {
         gap: ${isMultiCol ? '16px' : '20px'};
         font-family: var(--primary-font-family, sans-serif);
         overflow: hidden;
-        /* Initialize the CSS routing variables */
         --card-active-color: var(--primary-color);
         --card-inactive-color: ${cfg.icon_color_off || 'rgba(255,255,255,0.4)'};
+        transition: opacity 0.2s ease;
       }
 
-      .header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .card.unavailable {
+        opacity: 0.72;
+      }
+
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
 
       .info-group {
         display: flex;
@@ -185,31 +199,76 @@ class YWDAreaLightsCard extends HTMLElement {
         user-select: none;
         -webkit-tap-highlight-color: transparent;
       }
-      .info-group:active { opacity: 0.7; }
+
+      .info-group:active {
+        opacity: 0.7;
+      }
+
+      .card.unavailable .info-group {
+        cursor: default;
+      }
 
       .icon-box {
         width: ${isMultiCol ? '40px' : '48px'};
         height: ${isMultiCol ? '40px' : '48px'};
         border-radius: 50%;
-        display: flex; align-items: center; justify-content: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         flex-shrink: 0;
         background: rgba(255,255,255,0.05);
         transition: background 0.3s ease;
+        position: relative;
       }
+
       .icon-box.on {
-        /* If var(--card-active-color) is an RGB tuple, color-mix safely handles it */
         background: color-mix(in srgb, var(--card-active-color) 20%, transparent);
       }
 
       ha-icon {
         color: var(--card-inactive-color);
-        transition: color 0.3s ease;
+        transition: color 0.3s ease, opacity 0.2s ease;
       }
+
       ha-icon.on {
         color: var(--card-active-color);
       }
 
-      .details { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+      .card.unavailable ha-icon.main-icon {
+        opacity: 0.65;
+      }
+
+      .unavailable-badge {
+        position: absolute;
+        right: -2px;
+        bottom: -2px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: var(--error-color, #FF9800);
+        color: white;
+        border: 2px solid ${tileColor};
+        box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+      }
+
+      .unavailable-badge ha-icon {
+        color: white !important;
+        --mdc-icon-size: 10px;
+      }
+
+      .unavailable-badge.show {
+        display: flex;
+      }
+
+      .details {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        overflow: hidden;
+      }
 
       .name {
         font-size: ${isMultiCol ? '1rem' : '1.2rem'};
@@ -220,7 +279,6 @@ class YWDAreaLightsCard extends HTMLElement {
         white-space: nowrap;
       }
 
-      /* Force the switch to blindly inherit the card's master color */
       ha-switch {
         --switch-checked-button-color: #ffffff;
         --switch-checked-track-color: var(--card-active-color);
@@ -235,7 +293,8 @@ class YWDAreaLightsCard extends HTMLElement {
       }
 
       .slider-label {
-        display: flex; justify-content: space-between;
+        display: flex;
+        justify-content: space-between;
         text-transform: uppercase;
         font-size: ${isMultiCol ? '0.65rem' : '0.75rem'};
         letter-spacing: 1px;
@@ -245,13 +304,17 @@ class YWDAreaLightsCard extends HTMLElement {
 
       input[type="range"] {
         -webkit-appearance: none;
-        width: 100%; height: 6px;
+        width: 100%;
+        height: 6px;
         background: rgba(255,255,255,0.1);
-        border-radius: 5px; outline: none;
+        border-radius: 5px;
+        outline: none;
       }
+
       input[type="range"]::-webkit-slider-thumb {
         -webkit-appearance: none;
-        width: 20px; height: 20px;
+        width: 20px;
+        height: 20px;
         border-radius: 50%;
         background: var(--card-active-color);
         cursor: pointer;
@@ -259,7 +322,17 @@ class YWDAreaLightsCard extends HTMLElement {
         transition: background 0.3s ease;
       }
 
-      .no-config { display:flex; flex-direction:column; align-items:center; gap:8px; padding:16px; opacity:0.4; font-size:13px; font-family:var(--primary-font-family,sans-serif); color:var(--primary-text-color); }
+      .no-config {
+        display:flex;
+        flex-direction:column;
+        align-items:center;
+        gap:8px;
+        padding:16px;
+        opacity:0.4;
+        font-size:13px;
+        font-family:var(--primary-font-family,sans-serif);
+        color:var(--primary-text-color);
+      }
     `;
     this.shadowRoot.appendChild(style);
 
@@ -291,7 +364,13 @@ class YWDAreaLightsCard extends HTMLElement {
       iconWrap.className = 'icon-box';
 
       const icon = document.createElement('ha-icon');
+      icon.className = 'main-icon';
       iconWrap.appendChild(icon);
+
+      const unavailableBadge = document.createElement('div');
+      unavailableBadge.className = 'unavailable-badge';
+      unavailableBadge.innerHTML = `<ha-icon icon="mdi:exclamation-thick"></ha-icon>`;
+      iconWrap.appendChild(unavailableBadge);
 
       const details = document.createElement('div');
       details.className = 'details';
@@ -359,7 +438,10 @@ class YWDAreaLightsCard extends HTMLElement {
 
       const startPress = () => {
         fired = false;
-        timer = setTimeout(() => { fired = true; this._moreInfo(entityId); }, 500);
+        timer = setTimeout(() => {
+          fired = true;
+          this._moreInfo(entityId);
+        }, 500);
       };
       const cancelPress = () => clearTimeout(timer);
 
@@ -369,7 +451,9 @@ class YWDAreaLightsCard extends HTMLElement {
       infoGroup.addEventListener('touchstart', startPress, { passive: true });
       infoGroup.addEventListener('touchend', cancelPress);
       infoGroup.addEventListener('touchcancel', cancelPress);
-      infoGroup.addEventListener('click', () => { if (!fired) this._toggle(entityId); });
+      infoGroup.addEventListener('click', () => {
+        if (!fired && !this._isUnavailable(entityId)) this._toggle(entityId);
+      });
 
       grid.appendChild(card);
     });
@@ -385,29 +469,44 @@ class YWDAreaLightsCard extends HTMLElement {
       if (!card) return;
 
       const isOn = this._isOn(entityId);
+      const isUnavailable = this._isUnavailable(entityId);
       const stateObj = this._hass.states[entityId];
 
       const activeColor = this._getActiveColor(entityId, stateObj, cfg, iconColorOn);
 
       card.style.setProperty('--card-active-color', activeColor);
 
+      if (isUnavailable) card.classList.add('unavailable');
+      else card.classList.remove('unavailable');
+
       const iconWrap = card.querySelector('.icon-box');
       if (iconWrap) {
-        if (isOn) iconWrap.classList.add('on'); else iconWrap.classList.remove('on');
+        if (isOn && !isUnavailable) iconWrap.classList.add('on');
+        else iconWrap.classList.remove('on');
       }
 
-      const icon = card.querySelector('ha-icon');
+      const icon = card.querySelector('.main-icon');
       if (icon) {
         icon.setAttribute('icon', this._getIcon(entityId));
-        if (isOn) icon.classList.add('on'); else icon.classList.remove('on');
+        if (isOn && !isUnavailable) icon.classList.add('on');
+        else icon.classList.remove('on');
+      }
+
+      const unavailableBadge = card.querySelector('.unavailable-badge');
+      if (unavailableBadge) {
+        if (isUnavailable) unavailableBadge.classList.add('show');
+        else unavailableBadge.classList.remove('show');
       }
 
       const name = card.querySelector('.name');
       if (name) name.textContent = this._getName(entityId);
 
       const toggle = card.querySelector('ha-switch');
-      if (toggle && toggle.checked !== isOn) {
-        toggle.checked = isOn;
+      if (toggle) {
+        if (toggle.checked !== isOn) {
+          toggle.checked = isOn;
+        }
+        toggle.disabled = isUnavailable;
       }
 
       if (entityId.startsWith('light.') && stateObj) {
@@ -416,12 +515,15 @@ class YWDAreaLightsCard extends HTMLElement {
         const pctText = card.querySelector('.pct-text');
 
         if (sliderRow) {
-          sliderRow.style.display = isOn ? 'flex' : 'none';
+          sliderRow.style.display = (!isUnavailable && isOn) ? 'flex' : 'none';
         }
 
-        const brightness = stateObj.attributes?.brightness ? Math.round((stateObj.attributes.brightness / 255) * 100) : (isOn ? 100 : 0);
+        const brightness = stateObj.attributes?.brightness
+          ? Math.round((stateObj.attributes.brightness / 255) * 100)
+          : (isOn ? 100 : 0);
 
         if (slider) {
+          slider.disabled = isUnavailable;
           if (slider.dataset.dragging !== 'true' && document.activeElement !== slider) {
             if (slider.value !== String(brightness)) {
               slider.value = brightness;

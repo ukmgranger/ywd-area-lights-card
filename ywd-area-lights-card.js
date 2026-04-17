@@ -15,7 +15,14 @@ class YWDAreaLightsCard extends HTMLElement {
   }
 
   static getStubConfig() {
-    return { area: '', columns: 1, entity_overrides: {}, entity_order: [], domains: ['light', 'switch'] };
+    return {
+      area: '',
+      columns: 1,
+      entity_overrides: {},
+      entity_order: [],
+      domains: ['light', 'switch'],
+      show_sliders: true,
+    };
   }
 
   setConfig(config) {
@@ -28,6 +35,7 @@ class YWDAreaLightsCard extends HTMLElement {
       icon_color_on: 'var(--primary-color)',
       icon_color_off: 'rgba(255,255,255,0.4)',
       show_state: true,
+      show_sliders: true,
       border_radius: '28px',
       ...config,
     };
@@ -45,24 +53,32 @@ class YWDAreaLightsCard extends HTMLElement {
       this._render();
       return;
     }
+
     const areaId = this._config.area;
     const entityRegistry = this._hass.entities || {};
     const deviceRegistry = this._hass.devices || {};
     const domains = this._config.domains || ['light', 'switch'];
     const found = [];
+
     for (const [entityId, entity] of Object.entries(entityRegistry)) {
       const domain = entityId.split('.')[0];
       if (!domains.includes(domain)) continue;
-      const deviceAreaId = entity.device_id ? deviceRegistry[entity.device_id]?.area_id : null;
+
+      const deviceAreaId = entity.device_id
+        ? deviceRegistry[entity.device_id]?.area_id
+        : null;
+
       if ((entity.area_id === areaId || deviceAreaId === areaId) && this._hass.states[entityId]) {
         found.push(entityId);
       }
     }
+
     const order = this._config.entity_order || [];
     this._entities = [
       ...order.filter(id => found.includes(id)),
       ...found.filter(id => !order.includes(id)),
     ];
+
     this._render();
   }
 
@@ -75,10 +91,13 @@ class YWDAreaLightsCard extends HTMLElement {
   _getIcon(entityId) {
     const override = this._config.entity_overrides?.[entityId]?.icon;
     if (override) return override;
+
     const state = this._hass?.states[entityId];
     if (state?.attributes?.icon) return state.attributes.icon;
+
     const domain = entityId.split('.')[0];
     const isOn = state?.state === 'on';
+
     if (domain === 'light') return isOn ? 'mdi:lightbulb' : 'mdi:lightbulb-outline';
     if (domain === 'switch') return isOn ? 'mdi:toggle-switch' : 'mdi:toggle-switch-off-outline';
     return 'mdi:power';
@@ -94,31 +113,52 @@ class YWDAreaLightsCard extends HTMLElement {
 
   _getActiveColor(entityId, stateObj, cfg, fallback) {
     if (!stateObj || stateObj.state !== 'on') return fallback;
+
     if (entityId.startsWith('light.') && cfg.entity_overrides?.[entityId]?.use_light_color) {
       const rgb = stateObj.attributes?.rgb_color;
       if (rgb && Array.isArray(rgb) && rgb.length === 3) {
         return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
       }
     }
+
     return fallback;
+  }
+
+  _fireHaptic() {
+    this.dispatchEvent(new CustomEvent('haptic', {
+      detail: 'light',
+      bubbles: true,
+      composed: true,
+    }));
   }
 
   _toggle(entityId) {
     if (this._isUnavailable(entityId)) return;
+
     const domain = entityId.split('.')[0];
     const isOn = this._isOn(entityId);
-    this._hass.callService(domain, isOn ? 'turn_off' : 'turn_on', { entity_id: entityId });
+
+    this._fireHaptic();
+
+    this._hass.callService(domain, isOn ? 'turn_off' : 'turn_on', {
+      entity_id: entityId,
+    });
   }
 
   _handleSlider(entityId, value) {
     if (this._isUnavailable(entityId)) return;
+
     this._hass.callService('light', 'turn_on', {
       entity_id: entityId,
-      brightness_pct: value
+      brightness_pct: value,
     });
   }
 
   _moreInfo(entityId) {
+    if (this._isUnavailable(entityId)) return;
+
+    this._fireHaptic();
+
     this.dispatchEvent(new CustomEvent('hass-more-info', {
       detail: { entityId },
       bubbles: true,
@@ -323,15 +363,15 @@ class YWDAreaLightsCard extends HTMLElement {
       }
 
       .no-config {
-        display:flex;
-        flex-direction:column;
-        align-items:center;
-        gap:8px;
-        padding:16px;
-        opacity:0.4;
-        font-size:13px;
-        font-family:var(--primary-font-family,sans-serif);
-        color:var(--primary-text-color);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        padding: 16px;
+        opacity: 0.4;
+        font-size: 13px;
+        font-family: var(--primary-font-family, sans-serif);
+        color: var(--primary-text-color);
       }
     `;
     this.shadowRoot.appendChild(style);
@@ -377,7 +417,6 @@ class YWDAreaLightsCard extends HTMLElement {
 
       const name = document.createElement('span');
       name.className = 'name';
-
       details.appendChild(name);
 
       infoGroup.appendChild(iconWrap);
@@ -412,7 +451,10 @@ class YWDAreaLightsCard extends HTMLElement {
         slider.max = '100';
         slider.dataset.dragging = 'false';
 
-        const setDragging = (val) => slider.dataset.dragging = val;
+        const setDragging = (val) => {
+          slider.dataset.dragging = val;
+        };
+
         slider.addEventListener('mousedown', () => setDragging('true'));
         slider.addEventListener('touchstart', () => setDragging('true'), { passive: true });
         slider.addEventListener('mouseup', () => setDragging('false'));
@@ -425,7 +467,7 @@ class YWDAreaLightsCard extends HTMLElement {
         });
 
         slider.addEventListener('input', (e) => {
-          pctText.textContent = e.target.value + '%';
+          pctText.textContent = `${e.target.value}%`;
         });
 
         sliderRow.appendChild(sliderLabel);
@@ -441,9 +483,12 @@ class YWDAreaLightsCard extends HTMLElement {
         timer = setTimeout(() => {
           fired = true;
           this._moreInfo(entityId);
-        }, 500);
+        }, 800);
       };
-      const cancelPress = () => clearTimeout(timer);
+
+      const cancelPress = () => {
+        clearTimeout(timer);
+      };
 
       infoGroup.addEventListener('mousedown', startPress);
       infoGroup.addEventListener('mouseup', cancelPress);
@@ -451,8 +496,11 @@ class YWDAreaLightsCard extends HTMLElement {
       infoGroup.addEventListener('touchstart', startPress, { passive: true });
       infoGroup.addEventListener('touchend', cancelPress);
       infoGroup.addEventListener('touchcancel', cancelPress);
+
       infoGroup.addEventListener('click', () => {
-        if (!fired && !this._isUnavailable(entityId)) this._toggle(entityId);
+        if (!fired && !this._isUnavailable(entityId)) {
+          this._toggle(entityId);
+        }
       });
 
       grid.appendChild(card);
@@ -463,6 +511,7 @@ class YWDAreaLightsCard extends HTMLElement {
 
   _updateState(visible, cfg) {
     const iconColorOn = cfg.icon_color_on || 'var(--primary-color)';
+    const globalShowSliders = cfg.show_sliders !== false;
 
     visible.forEach(entityId => {
       const card = this.shadowRoot.getElementById(`card-${entityId.replace(/\./g, '-')}`);
@@ -473,7 +522,6 @@ class YWDAreaLightsCard extends HTMLElement {
       const stateObj = this._hass.states[entityId];
 
       const activeColor = this._getActiveColor(entityId, stateObj, cfg, iconColorOn);
-
       card.style.setProperty('--card-active-color', activeColor);
 
       if (isUnavailable) card.classList.add('unavailable');
@@ -514,8 +562,13 @@ class YWDAreaLightsCard extends HTMLElement {
         const slider = card.querySelector('input[type="range"]');
         const pctText = card.querySelector('.pct-text');
 
+        const sliderMode = cfg.entity_overrides?.[entityId]?.slider_mode;
+        let displaySlider = globalShowSliders;
+        if (sliderMode === 'show') displaySlider = true;
+        if (sliderMode === 'hide') displaySlider = false;
+
         if (sliderRow) {
-          sliderRow.style.display = (!isUnavailable && isOn) ? 'flex' : 'none';
+          sliderRow.style.display = (!isUnavailable && isOn && displaySlider) ? 'flex' : 'none';
         }
 
         const brightness = stateObj.attributes?.brightness
@@ -524,6 +577,7 @@ class YWDAreaLightsCard extends HTMLElement {
 
         if (slider) {
           slider.disabled = isUnavailable;
+
           if (slider.dataset.dragging !== 'true' && document.activeElement !== slider) {
             if (slider.value !== String(brightness)) {
               slider.value = brightness;
@@ -580,6 +634,7 @@ class YWDAreaLightsCardEditor extends HTMLElement {
       entity_order: [],
       domains: ['light', 'switch'],
       show_state: true,
+      show_sliders: true,
       border_radius: '28px',
       ...config,
     };
@@ -594,12 +649,14 @@ class YWDAreaLightsCardEditor extends HTMLElement {
     if (!this._hass || !areaId) return [];
     const domains = this._config.domains || ['light', 'switch'];
     const found = [];
+
     for (const [entityId, entity] of Object.entries(this._hass.entities || {})) {
       const domain = entityId.split('.')[0];
       if (!domains.includes(domain)) continue;
       const deviceAreaId = entity.device_id ? this._hass.devices?.[entity.device_id]?.area_id : null;
       if (entity.area_id === areaId || deviceAreaId === areaId) found.push(entityId);
     }
+
     const order = this._config.entity_order || [];
     return [
       ...order.filter(id => found.includes(id)),
@@ -619,12 +676,14 @@ class YWDAreaLightsCardEditor extends HTMLElement {
   _updateOverride(entityId, field, value) {
     const overrides = JSON.parse(JSON.stringify(this._config.entity_overrides || {}));
     if (!overrides[entityId]) overrides[entityId] = {};
+
     if (value !== '' && value !== null && value !== undefined && value !== false) {
       overrides[entityId][field] = value;
     } else {
       delete overrides[entityId][field];
       if (Object.keys(overrides[entityId]).length === 0) delete overrides[entityId];
     }
+
     this._fire({ ...this._config, entity_overrides: overrides });
   }
 
@@ -653,19 +712,30 @@ class YWDAreaLightsCardEditor extends HTMLElement {
 
   _cssToHex(color) {
     if (!color || color.startsWith('var(')) return '#03a9f4';
-    const map = { orange: '#ffa500', white: '#ffffff', grey: '#808080', gray: '#808080', blue: '#0000ff', red: '#ff0000' };
+    const map = {
+      orange: '#ffa500',
+      white: '#ffffff',
+      grey: '#808080',
+      gray: '#808080',
+      blue: '#0000ff',
+      red: '#ff0000',
+    };
     return map[color] || (color && color.startsWith('#') ? color : '#ffa500');
   }
 
   _updateAreaOptions() {
     const select = this.shadowRoot && this.shadowRoot.getElementById('area-select');
     if (!select) return;
+
     const areas = this._getAreas();
     const selectedArea = this._config.area || '';
     const currentOptions = Array.from(select.options).map(o => o.value).filter(v => v);
     const newOptions = areas.map(a => a.area_id);
+
     if (JSON.stringify(currentOptions) === JSON.stringify(newOptions)) return;
+
     while (select.options.length > 1) select.remove(1);
+
     areas.forEach(a => {
       const opt = document.createElement('option');
       opt.value = a.area_id;
@@ -678,6 +748,7 @@ class YWDAreaLightsCardEditor extends HTMLElement {
   _renderEntitiesSection() {
     const container = this.shadowRoot && this.shadowRoot.getElementById('entities-section');
     if (!container) return;
+
     container.innerHTML = '';
     const entities = this._getEntitiesForArea(this._config.area);
     if (!entities.length) return;
@@ -749,13 +820,19 @@ class YWDAreaLightsCardEditor extends HTMLElement {
     const hideIcon = document.createElement('ha-icon');
     hideIcon.setAttribute('icon', isHidden ? 'mdi:eye-off' : 'mdi:eye');
     hideBtn.appendChild(hideIcon);
-    hideBtn.addEventListener('click', e => { e.stopPropagation(); this._toggleHidden(entityId); });
+    hideBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      this._toggleHidden(entityId);
+    });
     actions.appendChild(hideBtn);
 
     const expandBtn = document.createElement('button');
     expandBtn.className = 'expand-btn';
     expandBtn.textContent = isExpanded ? '▲' : '▼';
-    expandBtn.addEventListener('click', e => { e.stopPropagation(); this._toggleExpand(entityId); });
+    expandBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      this._toggleExpand(entityId);
+    });
     actions.appendChild(expandBtn);
 
     header.appendChild(actions);
@@ -769,6 +846,7 @@ class YWDAreaLightsCardEditor extends HTMLElement {
       nameField.className = 'edit-field';
       const nameLabel = document.createElement('label');
       nameLabel.textContent = 'Name';
+
       const nameInput = document.createElement('input');
       nameInput.type = 'text';
       nameInput.className = 'name-input';
@@ -776,19 +854,25 @@ class YWDAreaLightsCardEditor extends HTMLElement {
       nameInput.value = overrides[entityId]?.name || '';
       nameInput.autocomplete = 'off';
       nameInput.addEventListener('keydown', e => {
-        if (e.key === 'Enter') { this._updateOverride(entityId, 'name', e.target.value.trim()); e.target.blur(); }
+        if (e.key === 'Enter') {
+          this._updateOverride(entityId, 'name', e.target.value.trim());
+          e.target.blur();
+        }
       });
       nameInput.addEventListener('blur', e => {
         this._updateOverride(entityId, 'name', e.target.value.trim());
       });
+
       nameField.appendChild(nameLabel);
       nameField.appendChild(nameInput);
       panel.appendChild(nameField);
 
       const iconField = document.createElement('div');
       iconField.className = 'edit-field';
+
       const iconLabel = document.createElement('label');
       iconLabel.textContent = 'Icon';
+
       const iconPicker = document.createElement('ha-icon-picker');
       iconPicker.className = 'icon-picker';
       iconPicker.value = overrides[entityId]?.icon || '';
@@ -798,11 +882,33 @@ class YWDAreaLightsCardEditor extends HTMLElement {
         this._updateOverride(entityId, 'icon', e.detail.value || '');
         setTimeout(() => this._renderEntitiesSection(), 50);
       });
+
       iconField.appendChild(iconLabel);
       iconField.appendChild(iconPicker);
       panel.appendChild(iconField);
 
       if (domain === 'light') {
+        const sliderField = document.createElement('div');
+        sliderField.className = 'edit-field';
+
+        const sliderLabel = document.createElement('label');
+        sliderLabel.textContent = 'Brightness Slider Visibility';
+
+        const sliderSelect = document.createElement('select');
+        sliderSelect.innerHTML = `
+          <option value="">Default (Follow Global)</option>
+          <option value="show">Force Show</option>
+          <option value="hide">Force Hide</option>
+        `;
+        sliderSelect.value = overrides[entityId]?.slider_mode || '';
+        sliderSelect.addEventListener('change', e => {
+          this._updateOverride(entityId, 'slider_mode', e.target.value);
+        });
+
+        sliderField.appendChild(sliderLabel);
+        sliderField.appendChild(sliderSelect);
+        panel.appendChild(sliderField);
+
         const colorToggleField = document.createElement('div');
         colorToggleField.className = 'edit-field';
 
@@ -822,7 +928,6 @@ class YWDAreaLightsCardEditor extends HTMLElement {
         toggleLabelRow.appendChild(colorCheckbox);
         toggleLabelRow.appendChild(toggleText);
         colorToggleField.appendChild(toggleLabelRow);
-
         panel.appendChild(colorToggleField);
       }
 
@@ -834,6 +939,7 @@ class YWDAreaLightsCardEditor extends HTMLElement {
 
   _attachDragHandlers(container, entities) {
     const rows = container.querySelectorAll('.entity-row');
+
     rows.forEach(row => {
       const handle = row.querySelector('.drag-handle');
       handle.addEventListener('mousedown', () => row.setAttribute('draggable', 'true'));
@@ -864,13 +970,18 @@ class YWDAreaLightsCardEditor extends HTMLElement {
       row.addEventListener('drop', e => {
         e.preventDefault();
         row.classList.remove('drag-over');
+
         if (!this._dragSrc || row.dataset.entity === this._dragSrc) return;
+
         const order = this._dragOrder ? this._dragOrder.slice() : entities.slice();
         const fromIdx = order.indexOf(this._dragSrc);
         const toIdx = order.indexOf(row.dataset.entity);
+
         if (fromIdx === -1 || toIdx === -1) return;
+
         order.splice(fromIdx, 1);
         order.splice(toIdx, 0, this._dragSrc);
+
         this._fire({ ...this._config, entity_order: order });
         setTimeout(() => this._renderEntitiesSection(), 50);
       });
@@ -903,6 +1014,7 @@ class YWDAreaLightsCardEditor extends HTMLElement {
       text.value = e.target.value;
       this._fire({ ...this._config, [configKey]: e.target.value });
     });
+
     text.addEventListener('blur', e => {
       this._fire({ ...this._config, [configKey]: e.target.value });
     });
@@ -910,6 +1022,7 @@ class YWDAreaLightsCardEditor extends HTMLElement {
     row.appendChild(picker);
     row.appendChild(text);
     section.appendChild(row);
+
     return section;
   }
 
@@ -967,15 +1080,19 @@ class YWDAreaLightsCardEditor extends HTMLElement {
 
     const areaSection = document.createElement('div');
     areaSection.className = 'section';
+
     const areaLabel = document.createElement('div');
     areaLabel.className = 'section-label';
     areaLabel.textContent = 'Area';
+
     const areaSelect = document.createElement('select');
     areaSelect.id = 'area-select';
+
     const placeholder = document.createElement('option');
     placeholder.value = '';
     placeholder.textContent = '— select an area —';
     areaSelect.appendChild(placeholder);
+
     this._getAreas().forEach(a => {
       const opt = document.createElement('option');
       opt.value = a.area_id;
@@ -983,63 +1100,116 @@ class YWDAreaLightsCardEditor extends HTMLElement {
       opt.selected = a.area_id === (this._config.area || '');
       areaSelect.appendChild(opt);
     });
+
     areaSelect.addEventListener('change', e => {
       this._expandedEntity = null;
       this._fire({ ...this._config, area: e.target.value, entity_order: [] });
       setTimeout(() => this._renderEntitiesSection(), 50);
     });
+
     areaSection.appendChild(areaLabel);
     areaSection.appendChild(areaSelect);
     editor.appendChild(areaSection);
 
     const colSection = document.createElement('div');
     colSection.className = 'section';
+
     const colLabel = document.createElement('div');
     colLabel.className = 'section-label';
     colLabel.textContent = 'Columns';
+
     const colInput = document.createElement('input');
     colInput.type = 'number';
     colInput.value = this._config.columns || 1;
     colInput.min = 1;
     colInput.max = 4;
     colInput.addEventListener('change', e => {
-      this._fire({ ...this._config, columns: parseInt(e.target.value) });
+      this._fire({ ...this._config, columns: parseInt(e.target.value, 10) });
     });
+
     colSection.appendChild(colLabel);
     colSection.appendChild(colInput);
     editor.appendChild(colSection);
 
+    const sliderToggleSection = document.createElement('div');
+    sliderToggleSection.className = 'section';
+
+    const sliderToggleLabelRow = document.createElement('label');
+    sliderToggleLabelRow.className = 'toggle-row';
+
+    const sliderCheckbox = document.createElement('input');
+    sliderCheckbox.type = 'checkbox';
+    sliderCheckbox.checked = this._config.show_sliders !== false;
+    sliderCheckbox.addEventListener('change', e => {
+      this._fire({ ...this._config, show_sliders: e.target.checked });
+    });
+
+    const sliderToggleText = document.createElement('span');
+    sliderToggleText.textContent = 'Show Brightness Sliders (Global)';
+
+    sliderToggleLabelRow.appendChild(sliderCheckbox);
+    sliderToggleLabelRow.appendChild(sliderToggleText);
+    sliderToggleSection.appendChild(sliderToggleLabelRow);
+    editor.appendChild(sliderToggleSection);
+
     const tileColSection = document.createElement('div');
     tileColSection.className = 'section';
+
     const tileColLabel = document.createElement('div');
     tileColLabel.className = 'section-label';
     tileColLabel.textContent = 'Tile colours';
+
     const twoCol = document.createElement('div');
     twoCol.className = 'two-col';
-    twoCol.appendChild(this._makeColorRow('tile-color-picker', 'tile-color-text', 'Card background', this._config.tile_color || 'var(--card-background-color)', 'tile_color'));
+    twoCol.appendChild(
+      this._makeColorRow(
+        'tile-color-picker',
+        'tile-color-text',
+        'Card background',
+        this._config.tile_color || 'var(--card-background-color)',
+        'tile_color'
+      )
+    );
+
     tileColSection.appendChild(tileColLabel);
     tileColSection.appendChild(twoCol);
     editor.appendChild(tileColSection);
 
     const iconColSection = document.createElement('div');
     iconColSection.className = 'section';
+
     const iconColLabel = document.createElement('div');
     iconColLabel.className = 'section-label';
     iconColLabel.textContent = 'Icon colour when on';
+
     iconColSection.appendChild(iconColLabel);
-    iconColSection.appendChild(this._makeColorRow('icon-color-on-picker', 'icon-color-on-text', '', this._config.icon_color_on || 'var(--primary-color)', 'icon_color_on').querySelector('.color-row'));
+    iconColSection.appendChild(
+      this._makeColorRow(
+        'icon-color-on-picker',
+        'icon-color-on-text',
+        '',
+        this._config.icon_color_on || 'var(--primary-color)',
+        'icon_color_on'
+      ).querySelector('.color-row')
+    );
+
     editor.appendChild(iconColSection);
 
     const brSection = document.createElement('div');
     brSection.className = 'section';
+
     const brLabel = document.createElement('div');
     brLabel.className = 'section-label';
     brLabel.textContent = 'Border radius';
+
     const brInput = document.createElement('input');
     brInput.type = 'text';
     brInput.value = this._config.border_radius || '28px';
     brInput.placeholder = 'e.g. 28px or 8px';
-    brInput.addEventListener('blur', e => this._fire({ ...this._config, border_radius: e.target.value }));
+    brInput.addEventListener('blur', e => {
+      this._fire({ ...this._config, border_radius: e.target.value });
+    });
+
     brSection.appendChild(brLabel);
     brSection.appendChild(brInput);
     editor.appendChild(brSection);

@@ -20,7 +20,7 @@ class YWDAreaLightsCard extends HTMLElement {
       columns: 1,
       entity_overrides: {},
       entity_order: [],
-      domains: ['light', 'switch'],
+      domains: ['light', 'switch', 'group'],
       show_sliders: true,
     };
   }
@@ -30,7 +30,7 @@ class YWDAreaLightsCard extends HTMLElement {
       columns: 1,
       entity_overrides: {},
       entity_order: [],
-      domains: ['light', 'switch'],
+      domains: ['light', 'switch', 'group'],
       tile_color: 'var(--card-background-color, #1c1c1c)',
       icon_color_on: 'var(--primary-color)',
       icon_color_off: 'rgba(255,255,255,0.4)',
@@ -57,7 +57,7 @@ class YWDAreaLightsCard extends HTMLElement {
     const areaId = this._config.area;
     const entityRegistry = this._hass.entities || {};
     const deviceRegistry = this._hass.devices || {};
-    const domains = this._config.domains || ['light', 'switch'];
+    const domains = this._config.domains || ['light', 'switch', 'group'];
     const found = [];
 
     for (const [entityId, entity] of Object.entries(entityRegistry)) {
@@ -100,6 +100,7 @@ class YWDAreaLightsCard extends HTMLElement {
 
     if (domain === 'light') return isOn ? 'mdi:lightbulb' : 'mdi:lightbulb-outline';
     if (domain === 'switch') return isOn ? 'mdi:toggle-switch' : 'mdi:toggle-switch-off-outline';
+    if (domain === 'group') return isOn ? 'mdi:lightbulb-group' : 'mdi:lightbulb-group-outline';
     return 'mdi:power';
   }
 
@@ -380,7 +381,7 @@ class YWDAreaLightsCard extends HTMLElement {
       const empty = document.createElement('div');
       empty.className = 'no-config';
       empty.innerHTML = `<ha-icon icon="${!cfg.area ? 'mdi:lightbulb-outline' : 'mdi:magnify'}"></ha-icon>
-                         <span>${!cfg.area ? 'No area configured' : 'No lights found in area'}</span>`;
+                         <span>${!cfg.area ? 'No area configured' : 'No lights, switches, or groups found in area'}</span>`;
       this.shadowRoot.appendChild(empty);
       return;
     }
@@ -632,7 +633,7 @@ class YWDAreaLightsCardEditor extends HTMLElement {
       columns: 1,
       entity_overrides: {},
       entity_order: [],
-      domains: ['light', 'switch'],
+      domains: ['light', 'switch', 'group'],
       show_state: true,
       show_sliders: true,
       border_radius: '28px',
@@ -647,7 +648,7 @@ class YWDAreaLightsCardEditor extends HTMLElement {
 
   _getEntitiesForArea(areaId) {
     if (!this._hass || !areaId) return [];
-    const domains = this._config.domains || ['light', 'switch'];
+    const domains = this._config.domains || ['light', 'switch', 'group'];
     const found = [];
 
     for (const [entityId, entity] of Object.entries(this._hass.entities || {})) {
@@ -705,9 +706,15 @@ class YWDAreaLightsCardEditor extends HTMLElement {
   }
 
   _getDisplayIcon(entityId) {
+    const domain = entityId.split('.')[0];
+
     return this._config.entity_overrides?.[entityId]?.icon
       || this._hass?.states[entityId]?.attributes?.icon
-      || (entityId.startsWith('light.') ? 'mdi:lightbulb' : 'mdi:toggle-switch');
+      || (domain === 'light'
+        ? 'mdi:lightbulb'
+        : domain === 'group'
+          ? 'mdi:lightbulb-group'
+          : 'mdi:toggle-switch');
   }
 
   _cssToHex(color) {
@@ -755,7 +762,7 @@ class YWDAreaLightsCardEditor extends HTMLElement {
 
     const label = document.createElement('div');
     label.className = 'section-label';
-    label.textContent = 'Lights & Switches';
+    label.textContent = 'Lights, Switches & Groups';
     container.appendChild(label);
 
     entities.forEach(entityId => this._buildEntityRow(container, entityId, entities));
@@ -1230,5 +1237,5 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: 'ywd-area-lights-card',
   name: 'YWD Area Lights Card',
-  description: 'Pro-grade area lighting card with pure CSS Variable styling logic to prevent variable parsing errors.',
+  description: 'Pro-grade area lighting card with support for lights, switches, and groups assigned to an area.',
 });
